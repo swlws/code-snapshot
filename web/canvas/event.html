@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>canvas</title>
+    <style>
+      canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 拖拽canvas中的矩形、线条，并计算出每个线条的起点、终点对应的矩形的ID -->
+
+    <canvas id="canvas" width="500" height="500"></canvas>
+
+    <script src="./draw.js"></script>
+    <script>
+      const canvas = document.getElementById("canvas");
+
+      const paths = [
+        {
+          id: "001",
+          type: "rect",
+          pos: { x: 50, y: 50 },
+          width: 150,
+          height: 50,
+          text: "ID 001",
+        },
+        {
+          id: "002",
+          type: "rect",
+          pos: { x: 150, y: 150 },
+          width: 150,
+          height: 50,
+          text: "ID 002",
+        },
+        {
+          id: "003",
+          type: "rect",
+          pos: { x: 250, y: 50 },
+          width: 150,
+          height: 50,
+          text: "ID 003",
+        },
+        {
+          id: "004",
+          type: "line",
+          pos: { x1: 200, y1: 300, x2: 250, y2: 300 },
+        },
+        {
+          id: "005",
+          type: "line",
+          pos: { x1: 400, y1: 400, x2: 100, y2: 300 },
+        },
+      ];
+
+      new Draw(canvas, paths);
+    </script>
+  </body>
+</html>
