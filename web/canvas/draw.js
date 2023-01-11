@@ -1,3 +1,10 @@
+const Color = {
+  BLACK: "black",
+  BLUE: "#0091fe",
+  WHITE: "#fff",
+  TRANSPARENT: "transparent",
+};
+
 /**
  * 单条直线上，以直线上某个点，距离此点等距的两个点
  *
@@ -87,7 +94,7 @@ function triangle_points(x1, y1, x2, y2) {
 
   // <x1,y1> <x2,y2> 的垂直线的斜率
   const k2 = -1 / k;
-  const p = equidistance_points(mx, my, k2, 10);
+  const p = equidistance_points(mx, my, k2, 5);
 
   p.splice(2, 0, x2, y2);
   return p;
@@ -116,7 +123,7 @@ function draw_points(ctx, arr, close = false) {
  * @param {*} ctx
  * @param {*} cfg
  */
-function draw_rect(ctx, cfg) {
+function draw_rect(ctx, cfg, isActive = false) {
   const {
     pos: { x, y },
     width,
@@ -124,23 +131,31 @@ function draw_rect(ctx, cfg) {
     text,
   } = cfg;
 
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.fillStyle = Color.WHITE;
+  ctx.fill();
+  ctx.closePath();
+
   if (text) {
     ctx.beginPath();
-    ctx.font = "18px serif";
+    ctx.font = "14px serif";
     ctx.textAlign = "center";
+    ctx.fillStyle = Color.BLACK;
     ctx.fillText(text, x + width / 2, y + height / 2 + 5, width);
     ctx.closePath();
   }
 
+  // 包裹层
   ctx.beginPath();
-  ctx.rect(x, y, width, height);
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "#333";
+  ctx.rect(x - 2, y - 2, width + 4, height + 4);
+  // ctx.lineWidth = 1;
+  ctx.strokeStyle = isActive ? Color.BLUE : Color.BLACK;
   ctx.stroke();
   ctx.closePath();
 }
 
-function draw_line(ctx, cfg) {
+function draw_line(ctx, cfg, isActive = false) {
   const {
     pos: { x1, y1, x2, y2 },
   } = cfg;
@@ -150,7 +165,7 @@ function draw_line(ctx, cfg) {
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   ctx.lineWidth = 1;
-  ctx.strokeStyle = "#333";
+  ctx.strokeStyle = isActive ? Color.BLUE : Color.BLACK;
   ctx.stroke();
   ctx.closePath();
 
@@ -158,15 +173,15 @@ function draw_line(ctx, cfg) {
   ctx.beginPath();
   const arr = triangle_points(x1, y1, x2, y2);
   draw_points(ctx, arr, false);
-  ctx.strokeStyle = "#333";
+  ctx.strokeStyle = isActive ? Color.BLUE : Color.BLACK;
   ctx.stroke();
   ctx.closePath();
 
   // 画包裹层
   ctx.beginPath();
-  const arr2 = around_line_points(x1, y1, x2, y2, 5);
+  const arr2 = around_line_points(x1, y1, x2, y2, 15);
   draw_points(ctx, arr2, true);
-  ctx.strokeStyle = "transparent";
+  ctx.strokeStyle = Color.TRANSPARENT;
   ctx.stroke();
   ctx.closePath();
 }
@@ -175,16 +190,19 @@ function draw_line(ctx, cfg) {
  * 控制图形的绘制与移动
  */
 class Draw {
-  constructor(el, paths) {
+  constructor(el, paths, cb) {
     this.canvas = el;
     this.ctx = this.canvas.getContext("2d");
+
+    this.cb = cb;
 
     // 待绘制的图形
     this.paths = paths;
 
     // 控制属性
     this.can_move = false;
-    this.selected_path = null;
+    this.active_id = "";
+    this.active_path = null;
     this.down_pos = null;
 
     // 初始化绘制
@@ -201,13 +219,17 @@ class Draw {
 
     let who;
 
-    for (let path of this.paths) {
+    const lines = this.paths.filter((path) => path.type === "line");
+    const not_lines = this.paths.filter((path) => path.type !== "line");
+
+    // 先画节点，最后划线
+    for (let path of [...not_lines, ...lines]) {
       switch (path.type) {
         case "rect":
-          draw_rect(this.ctx, path);
+          draw_rect(this.ctx, path, this.active_id === path.id);
           break;
         case "line":
-          draw_line(this.ctx, path);
+          draw_line(this.ctx, path, this.active_id === path.id);
           break;
         default:
           break;
@@ -239,45 +261,85 @@ class Draw {
     this.down_pos = this.__getEventPosition(e);
 
     const active_id = this.__draw(this.down_pos);
+    this.active_id = active_id || "";
     console.info("active_id = ", active_id);
 
-    this.selected_path = paths.find((path) => path.id === active_id);
-    if (this.selected_path) {
-      this.selected_path.pre_pos = { ...this.selected_path.pos };
+    this.active_path = this.paths.find((path) => path.id === active_id);
+    if (this.active_path) {
+      this.active_path.pre_pos = { ...this.active_path.pos };
+
+      // 若不是线，则找到所有此图形关联的线
+      const lines = this.__findRelationLines(this.active_path);
+      for (let line of lines) {
+        line.pre_pos = { ...line.pos };
+      }
     }
   }
 
+  __findRelationLines(shape) {
+    if (shape.type === "line") return [];
+
+    return this.paths.filter((path) => {
+      const { type, source, target } = path;
+      if (type !== "line") return false;
+
+      if ([source, target].includes(shape.id)) return true;
+      return false;
+    });
+  }
+
   __mouseMoveEvent(e) {
-    if (!this.can_move || !this.selected_path) return;
+    if (!this.can_move || !this.active_path) return;
 
     const t = this.__getEventPosition(e);
     const dx = t.x - this.down_pos.x;
     const dy = t.y - this.down_pos.y;
 
-    const { type } = this.selected_path;
+    const { type } = this.active_path;
 
     switch (type) {
       case "rect":
         {
-          this.selected_path.pos.x = this.selected_path.pre_pos.x + dx;
-          this.selected_path.pos.y = this.selected_path.pre_pos.y + dy;
+          this.active_path.pos.x = this.active_path.pre_pos.x + dx;
+          this.active_path.pos.y = this.active_path.pre_pos.y + dy;
+
+          const lines = this.__findRelationLines(this.active_path);
+          for (let line of lines) {
+            const {
+              source,
+              target,
+              pre_pos: { x1 = 0, y1 = 0, x2 = 0, y2 = 0 },
+            } = line;
+            if (source === this.active_path.id) {
+              line.pos.x1 = x1 + dx;
+              line.pos.y1 = y1 + dy;
+            } else if (target === this.active_path.id) {
+              line.pos.x2 = x2 + dx;
+              line.pos.y2 = y2 + dy;
+            }
+          }
         }
         break;
       case "line":
         {
           const { x, y } = this.down_pos;
-          const {
-            pre_pos: { x1, y1, x2, y2 },
-          } = this.selected_path;
+
+          const cfg = this.active_path;
+          const { x1 = 0, y1 = 0, x2 = 0, y2 = 0 } = cfg.pre_pos || {};
 
           const dL = Math.pow(x1 - x, 2) + Math.pow(y1 - y, 2);
           const dR = Math.pow(x2 - x, 2) + Math.pow(y2 - y, 2);
-          if (dL < dR) {
-            this.selected_path.pos.x1 = this.selected_path.pre_pos.x1 + dx;
-            this.selected_path.pos.y1 = this.selected_path.pre_pos.y1 + dy;
+          if (dL < 255) {
+            this.active_path.pos.x1 = x1 + dx;
+            this.active_path.pos.y1 = y1 + dy;
+          } else if (dR < 255) {
+            this.active_path.pos.x2 = x2 + dx;
+            this.active_path.pos.y2 = y2 + dy;
           } else {
-            this.selected_path.pos.x2 = this.selected_path.pre_pos.x2 + dx;
-            this.selected_path.pos.y2 = this.selected_path.pre_pos.y2 + dy;
+            this.active_path.pos.x1 = x1 + dx;
+            this.active_path.pos.y1 = y1 + dy;
+            this.active_path.pos.x2 = x2 + dx;
+            this.active_path.pos.y2 = y2 + dy;
           }
         }
         break;
@@ -292,6 +354,16 @@ class Draw {
     this.can_move = false;
 
     this.__calculateRelation();
+
+    const cb = this.cb;
+    if (cb) {
+      cb(this);
+    }
+
+    // 发生鼠标事件后，会有一些状态的变换，比如：
+    //    活动的节点，边框变为蓝色
+    // 所以，鼠标谈起时，额外多绘制一次，绘制最终状态
+    this.__draw();
   }
 
   __registerEvent() {
